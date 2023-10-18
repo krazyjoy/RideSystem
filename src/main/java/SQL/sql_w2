@@ -1,0 +1,32 @@
+-- create a ride table:
+CREATE TABLE Ride (ride_id INT PRIMARY KEY,
+driver_id INT,
+passenger_id INT,
+status ENUM('scheduled', 'canceled', 'received'),
+FOREIGN KEY (driver_id) REFERENCES user(id),
+FOREIGN KEY (passenger_id) REFERENCES user(id));
+
+
+
+-- Allow passengers to schedule and cancel rides
+GRANT INSERT, UPDATE, DELETE ON Ride TO 'passenger_role';
+
+-- Allow drivers to receive ride schedules
+GRANT UPDATE ON Ride TO 'driver_role';
+
+
+
+-- Insert a new ride schedule for a passenger
+INSERT INTO Ride (ride_id, driver_id, passenger_id, status)
+VALUES (1, NULL, passenger_user_id, 'scheduled');
+
+-- Cancel a scheduled ride for a passenger
+UPDATE Ride
+SET status = 'canceled'
+WHERE ride_id = 1 AND passenger_id = passenger_user_id;
+
+
+-- Update the status of a scheduled ride to 'received' when a driver accepts it
+UPDATE Ride
+SET status = 'received', driver_id = driver_user_id
+WHERE ride_id = 1;
