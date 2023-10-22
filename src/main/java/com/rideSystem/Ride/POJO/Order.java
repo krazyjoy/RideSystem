@@ -5,9 +5,12 @@ import lombok.Data;
 import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.DynamicUpdate;
 import org.springframework.stereotype.Component;
-
 import java.io.Serializable;
 import java.time.LocalDateTime;
+
+// named query: no insertion method, @NamedQuery(name="Order.createOrder", query = "insert into Order o set o.rideId=:ride_id")
+
+
 @Component
 @Data
 @DynamicInsert
@@ -22,9 +25,9 @@ public class Order implements Serializable {
     @Column(name="order_id")
     private Integer orderId;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name="ride_id_fk", nullable = false)
-    private Ride rideId;
+
+    @Column(name="ride_id", nullable = true)
+    private Integer rideId;
 
     @Column(name="order_created_time")
     private LocalDateTime orderCreatedTime;

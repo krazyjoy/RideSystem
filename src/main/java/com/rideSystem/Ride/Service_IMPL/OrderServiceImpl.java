@@ -1,13 +1,10 @@
 package com.rideSystem.Ride.Service_IMPL;
 
-import com.alipay.easysdk.kernel.Config;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rideSystem.Ride.DAO.OrderDao;
 import com.rideSystem.Ride.DAO.RideDao;
 import com.rideSystem.Ride.DAO.UserDao;
 import com.rideSystem.Ride.POJO.*;
 import com.rideSystem.Ride.Service.OrderService;
-import com.rideSystem.Ride.utils.Alipay;
 import com.rideSystem.Ride.utils.ObjectToHashMapConverter;
 import com.rideSystem.Ride.utils.Response;
 import lombok.NoArgsConstructor;
@@ -15,7 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import com.alipay.easysdk.factory.Factory;
+
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -36,9 +33,12 @@ public class OrderServiceImpl implements OrderService {
         this.userDao = userDao;
         this.rideDao = rideDao;
     }
+    @Override
     public Response createOrder(Map<String,String> requestMap){
-        log.info("inside create order");
+        log.info("inside create order: requestMap {} ", requestMap);
         try{
+            // Order order = orderDao.findById(1).orElseThrow();
+
             if(validateCreateOrderMap(requestMap)){
 
                 Order order = initializeOrder(requestMap);
@@ -61,6 +61,7 @@ public class OrderServiceImpl implements OrderService {
     public Response getOrder(Integer orderId, Map<String, String> requestMap) {
         try{
             Order order = orderDao.findById(orderId).orElseThrow();
+            // TODO: TOKEN should match the ride person(driver/passenger) in requestMap
             Response response = Response.successResponse();
             Map<String,Object> order_data = order_info(order);
             response.setData(order_data);
@@ -71,11 +72,7 @@ public class OrderServiceImpl implements OrderService {
         }
         return Response.failedResponse("failed (OrderServiceImpl): get order", HttpStatus.INTERNAL_SERVER_ERROR);
     }
-//    private Object jsonObjectMapper(Order order, List<Order> list){
-//        ObjectMapper jsonMapper = new ObjectMapper();
-//        jsonMapper.writeValueAsString(list);
-//        return jsonMapper;
-//    }
+
     private boolean validateCreateOrderMap(Map<String,String> requestMap){
         log.info("validate: create order map");
         if(requestMap.containsKey("rid")){
@@ -88,16 +85,13 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private Order initializeOrder(Map<String,String> requestMap){
-
         Order order = new Order();
-        log.info("order info: ", order.getOrderId().toString());
+        log.info("requestMap: {}", requestMap);
+        Integer rideId = Integer.parseInt(requestMap.get("rid"));
+        log.info("rideId: {}", rideId);
+        order.setRideId(rideId);
+        log.info("order: {} ", order);
         orderDao.save(order);
-        Ride ride = rideDao.findById(Integer.parseInt(requestMap.get("rid"))).orElseThrow();
-        if(ride == null)
-            log.info("initialize order: ride is null");
-        log.info("ride: ",ride.getRideId().toString());
-        order.setRideId(ride);
-        log.info("status: ",OrderStatus.UNPAID.toString());
 
         order.setOrderStatus(OrderStatus.UNPAID);
         log.info(order.getOrderId().toString());
@@ -106,10 +100,11 @@ public class OrderServiceImpl implements OrderService {
         orderDao.save(order);
         return order;
     }
+
     private Map<String,Object> order_info(Order order){
         String orderId = order.getOrderId().toString();
-        Ride ride = order.getRideId();
-        String rideId = ride.getRideId().toString();
+        Integer rideId = order.getRideId();
+
         String createTime = "";
         String totalPrice="";
         if(order.getOrderCreatedTime()!=null)
@@ -126,15 +121,6 @@ public class OrderServiceImpl implements OrderService {
         return  order_data;
     }
 
-    private void invokeAlipay() throws Exception{
-        // 1. set options
-        Factory.setOptions(Alipay.getOptions());
-        try{
-            // 2. API call
 
-        }catch(Exception e){
-
-        }
-    }
 
 }

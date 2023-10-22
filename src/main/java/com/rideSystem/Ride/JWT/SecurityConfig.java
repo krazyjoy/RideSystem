@@ -2,6 +2,7 @@ package com.rideSystem.Ride.JWT;
 
 
 import lombok.AllArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -25,7 +26,7 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @AllArgsConstructor
 public class SecurityConfig {
     CustomerUsersDetailsService customerUsersDetailsService;
-
+    @Autowired
     JwtFilter jwtFilter;
 
     @Bean
@@ -33,12 +34,17 @@ public class SecurityConfig {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
+                .securityMatcher("/checkout")
                 .authorizeHttpRequests((auths) -> auths
-                        .requestMatchers("/user/**").permitAll()
+                        .requestMatchers("/user/**", "/checkout").permitAll()
                         .anyRequest().authenticated())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(Customizer.withDefaults());
+
+        // Configure security for controllers
+
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+
+
         return http.build();
     }
 

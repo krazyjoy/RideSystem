@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:th='http://www.thymeleaf.org'>
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout</title>
+    <style>
+        body {
+            font-family: 'arial';
+        }
+        #checkout-form input,
+        #checkout-form button {
+            display: block;
+            margin: 12px;
+        }
+    </style>
+</head>
+<body>
+<form action='/charge' method='POST' id='checkout-form'>
+    <input type='hidden' value="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3ZWVrZW5kIiwicm9sZSI6InVzZXIiLCJleHAiOjE2OTc4OTI4NzEsImlhdCI6MTY5Nzg1Njg3MX0.QwOw9TH5-mEiEngmsBiWjQ8yi0lWOefL4IZEWtq2rgY" name="jwtToken" />
+    <input type='hidden' th:value='${order_id}' name='order_id' />
+    <label> Order Id: <span th:text='${order_id}'/></label>
+    <input type='hidden' th:value='${amount}' name='amount' />
+    <label>Price:<span th:text='${amount/100}' /></label>
+    <!-- NOTE: data-key/data-amount/data-currency will be rendered by Thymeleaf -->
+    <script
+            src='https://checkout.stripe.com/checkout.js'
+            class='stripe-button'
+            th:attr='data-key=${stripePublicKey},
+                         data-amount=${amount},
+                         data-currency=${currency}'
+            data-name='payment'
+            data-description='checkout form'
+            data-image='../static/Stripe-icon.png'
+            data-locale='auto'
+            data-zip-code='false'>
+        // var form = document.getElementById('checkout-form');
+        // var input = document.createElement('input');
+        // input.type = 'hidden';
+        // input.name = 'jwtToken';
+        // input.value = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3ZWVrZW5kIiwicm9sZSI6InVzZXIiLCJleHAiOjE2OTc4OTI4NzEsImlhdCI6MTY5Nzg1Njg3MX0.QwOw9TH5-mEiEngmsBiWjQ8yi0lWOefL4IZEWtq2rgY'; // Replace with your actual JWT token
+        //
+        // form.appendChild(input);
+
+        // Now, when the form is submitted, it will include the JWT token in the form data
+
+        console.log('inside script')
+        // document.getElementById('checkout-form').addEventListener('submit', function(event) {
+        //     event.preventDefault(); // Prevent the default form submission behavior
+        //     console.log('inside submit event')
+        //     var formData = new FormData(this); // Get form data
+
+        //     // Send the form data via POST request using fetch
+        //     fetch('/charge', {
+        //         method: 'POST',
+        //         body: formData,
+        //         headers:{
+        //             'Authorization': 'Bearer '+jwtToken
+        //         }
+        //     })
+        //         .then(response => response.json())
+        //         .then(data => {
+        //             // Handle the response data here
+        //             console.log('/charge response success');
+        //             console.log(data);
+        //         })
+        //         .catch(error => {
+        //             // Handle errors
+        //             console.log('/charge response error');
+        //             console.error('Error:', error);
+        //         });
+        // });
+
+    </script>
+</form>
+</body>
+</html>

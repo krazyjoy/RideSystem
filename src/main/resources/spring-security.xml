@@ -1,0 +1,7 @@
+<http>
+    <!-- Other security configurations... -->
+
+    <intercept-url pattern="/checkout" filters="none" />
+    <intercept-url pattern="/charge" filters="none" />
+    <!-- Other intercept-url elements or configurations... -->
+</http>
