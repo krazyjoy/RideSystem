@@ -188,3 +188,20 @@ Hibernate:
   - Wrap try{}, catch{} around the signUp function
   - return `INTERNAL SERVER ERROR`
 # RideSystem
+
+## Authentication - CheckoutController
+1. issue: CheckoutController is a @Controller type that maps to "checkout.html" by its @PostMapping(path="/checkout)
+   - Thymeleaf searches for "checkout" named html based on "/checkout" path
+   - Cannot use @RestController nor @RequestMap()
+   - solution: use @RequestParam() to send by key in url ex: http://localhost:8089/checkout?order_id=1
+2. issue: CheckoutController need to bypass JWT token authentication: 
+    - solution: `JwtFilter.java` defines matching path:  request.getServletPath().matches("/checkout")
+      - `SecurityFilterChain.java` add `.securityMatcher("/checkout")`         
+        ```agsl
+          .securityMatcher("/checkout")
+        .authorizeHttpRequests((auths) -> auths
+        .requestMatchers("/user/**", "/checkout").permitAll()
+        .anyRequest().authenticated())
+
+        ```
+        

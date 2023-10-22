@@ -111,10 +111,16 @@ public class CheckoutController{
 
 
     @PostMapping(path="/checkout")
-
-    public String checkout(Model model) throws StripeException {
+    public String checkout(@RequestParam("order_id") String orderId, Model model) throws StripeException {
         log.info("/checkout");
-        model.addAttribute("amount", 50); // in cents
+
+        Order order = orderDao.findById(Integer.parseInt(orderId)).orElseThrow();
+        Integer amount=0;
+        if(order !=null)
+            amount = order.getTotalPrice().intValue();
+            log.info("amount, {}", amount);
+        model.addAttribute("order_id", orderId);
+        model.addAttribute("amount", amount*100); // in cents
         model.addAttribute("stripePublicKey", stripePublicKey);
         model.addAttribute("currency", ChargeRequest.Currency.EUR);
 

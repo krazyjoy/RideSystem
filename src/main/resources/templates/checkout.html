@@ -16,8 +16,11 @@
 <body>
 
     <form action='/charge' method='POST' id='checkout-form'>
+        <input type="hidden" th:value='${order_id}' name='order_id'/>
+        <label>Order ID: <span th:text="${order_id}"/></label>
         <input type='hidden' th:value='${amount}' name='amount' />
-        <label>Price:<span th:text='${amount}' /></label>
+        <label>Price:<span th:text='${amount/100}' /></label>
+
         <!-- NOTE: data-key/data-amount/data-currency will be rendered by Thymeleaf -->
         <script
                 src='https://checkout.stripe.com/checkout.js'
@@ -30,6 +33,7 @@
                 data-image='http://www.baeldung.com/wp-content/themes/baeldung/favicon/android-chrome-192x192.png'
                 data-locale='auto'
                 data-zip-code='false'>
+
         </script>
     </form>
 </body>
