@@ -12,7 +12,7 @@ public interface RideRest {
     @PutMapping(path="/{rId}")
     public Response driverAcceptRideSession(@PathVariable("rId") Integer rideId, @RequestBody(required = true) Map<String,String> requestMap);
 
-    @GetMapping(path="/{rId}")
+    @PostMapping(path="/{rId}")
     public Response getRideSession(@PathVariable("rId") Integer rideId, @RequestBody(required = true) Map<String, String> requestMap);
 
     @PostMapping
@@ -23,4 +23,6 @@ public interface RideRest {
     @PutMapping(path="/{oId}/{rId}")
     public Response requestOrder(@PathVariable("oId") Integer orderId, @PathVariable("rId") Integer rideId, @RequestBody(required = true) Map<String,String> requestMap);
 
+    @GetMapping(path="/subscriptions")
+    public Response subscriptions(@RequestParam("topic") String topic);
 }

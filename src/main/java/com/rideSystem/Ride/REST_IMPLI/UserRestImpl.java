@@ -10,6 +10,7 @@ import com.rideSystem.Ride.wrapper.UserWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -95,4 +96,33 @@ public class UserRestImpl implements UserRest {
 
     }
 
+    @Override
+    public ResponseEntity<User> getUser(Integer user_id) {
+        try{
+            return userService.getUser(user_id);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return new ResponseEntity<>(new User(),HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    @Override
+    public ResponseEntity<User> getUserByName(String username){
+        try{
+            return userService.getUserByName(username);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return new ResponseEntity<>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Override
+    public ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader){
+        try{
+            return userService.logout(tokenHeader);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return new ResponseEntity<>(RideConstants.SOMETHING_WENT_WRONG, HttpStatus.INTERNAL_SERVER_ERROR);
+
+    }
 }

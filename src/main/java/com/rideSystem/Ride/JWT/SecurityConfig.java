@@ -2,6 +2,7 @@ package com.rideSystem.Ride.JWT;
 
 
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,9 +19,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
 
 import static org.springframework.security.config.Customizer.withDefaults;
-
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @AllArgsConstructor
@@ -32,25 +37,32 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(Customizer.withDefaults())
+                .cors(Customizer.withDefaults()) // // .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
-                .securityMatcher("/checkout")
+                .securityMatcher("/checkout" )
                 .authorizeHttpRequests((auths) -> auths
                         .requestMatchers("/user/**", "/checkout").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(Customizer.withDefaults());
-
-        // Configure security for controllers
-
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
 
         return http.build();
     }
 
-    // maybe insert this back later   .authorizeHttpRequests((auths) -> auths.anyRequest().authenticated()).httpBasic(withDefaults());
-    //not sure yet..
-
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        log.info("start: cors");
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList("*"));
+        //configuration.setAllowedOrigins(Arrays.asList("*"));
+        configuration.setAllowedMethods(Arrays.asList("GET","POST","PUT","DELETE"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Origin", "x-content-type-options"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        log.info("end: cors");
+        return source;
+    }
     @Bean
     public PasswordEncoder passwordEncoder(){
         return NoOpPasswordEncoder.getInstance();

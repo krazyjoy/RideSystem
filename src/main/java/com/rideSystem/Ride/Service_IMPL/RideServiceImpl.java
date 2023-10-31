@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rideSystem.Ride.DAO.RideDao;
 import com.rideSystem.Ride.DAO.UserDao;
 import com.rideSystem.Ride.POJO.Ride;
+import com.rideSystem.Ride.POJO.RideStatus;
 import com.rideSystem.Ride.POJO.RideType;
 import com.rideSystem.Ride.POJO.User;
 import com.rideSystem.Ride.Service.RideService;
@@ -72,27 +73,30 @@ public class RideServiceImpl implements RideService {
                     MqttSubClient mqttSubClient = new MqttSubClient(mqttPushClient);
                     Map<String,Object> rideMessage = new HashMap<>();
                     if(emqxSubscriberFinder(channel)){
+                        if(acceptableRide(rideId)) {
+                            mqttSubClient.subscribe(channel, 2);
+                            rideMessage.put("status", 0);
+                            rideMessage.put("msg", "success");
+                            rideMessage.put("data", "channel: " + channel);
 
-                        rideMessage.put("status", 1);
-                        rideMessage.put("msg", "already subscribed");
+                            ride.setRideStatus(RideStatus.Received_Order);
+                            mqttPushClient.publish(2, false,channel, rideMessage);
+                            sessionResponse.setStatus(0);
+                            sessionResponse.setMsg("success");
+                            HashMap<String,Object> acceptSession = new HashMap<>();
+                            acceptSession.put("channel", channel);
+                            sessionResponse.setData(acceptSession);
 
-                        sessionResponse.setStatus(1);
-                        sessionResponse.setMsg("Ride has been accepted by others");
+                        }else{
+                            rideMessage.put("status", 1);
+                            rideMessage.put("msg", "already subscribed");
 
+                            sessionResponse.setStatus(1);
+                            sessionResponse.setMsg("Ride has been accepted by others");
+                        }
                     }else{
-                        mqttSubClient.subscribe(channel, 2);
-                        rideMessage.put("status", 0);
-                        rideMessage.put("msg", "success");
-                        rideMessage.put("data", "channel: " + channel);
-
-                        mqttPushClient.publish(2, false,channel, rideMessage);
-                        sessionResponse.setStatus(0);
-                        sessionResponse.setMsg("success");
-                        HashMap<String,Object> acceptSession = new HashMap<>();
-                        acceptSession.put("channel", channel);
-                        sessionResponse.setData(acceptSession);
+                        log.info("something went wrong in emqx");
                     }
-
                 }
             }else{
                 sessionResponse.setStatus(1);
@@ -142,6 +146,7 @@ public class RideServiceImpl implements RideService {
                 ride.setMQTTTopic(channel);
                 log.info("request Ride: ride {}", ride.getRideId());
                 log.info(ride.getMQTTTopic());
+                ride.setRideStatus(RideStatus.Created);
                 rideDao.save(ride);
 
                 mqttConfiguration.setTopic(channel);
@@ -215,6 +220,69 @@ public class RideServiceImpl implements RideService {
         return Response.failedResponse("requestOrder", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @Override
+    public Response subscriptions(String topic){
+        String baseUrl = "http://192.168.12.218:18083"; // Replace with your EMQX host and port
+        String topicFilter = topic; // Replace with the topic you're interested in
+        String username = "admin";
+        String password = "public";
+        log.info("topic: {}", topic);
+        // Encode username and password
+        String authString = username + ":" + password;
+        String authHeaderValue = "Basic " + java.util.Base64.getEncoder().encodeToString(authString.getBytes());
+
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            HttpGet httpGet = new HttpGet(baseUrl + "/api/v4/subscriptions");
+            httpGet.setHeader("Authorization", authHeaderValue);
+
+            CloseableHttpResponse response = httpClient.execute(httpGet);
+
+            if (response.getStatusLine().getStatusCode() == 200) {
+                String responseBody = EntityUtils.toString(response.getEntity());
+                System.out.println(responseBody);
+                // Parse responseBody to get subscription information
+                ObjectMapper objectMapper = new ObjectMapper();
+                JsonNode jsonNode = objectMapper.readTree(responseBody);
+
+// Assuming the response body is an object with a "subscriptions" array
+                JsonNode subscriptions = jsonNode.get("data");
+                Response subscription_response = Response.successResponse();
+                Map<String, Object> subscription_data = new HashMap<>();
+                subscription_data.put("client_id", new ArrayList<String>());
+                for (JsonNode subscription : subscriptions) {
+                    log.info("looping through subscriptions {}", subscription);
+                    String subscribedTopic = subscription.get("topic").asText();
+                    log.info("subscribed topic: {}", subscribedTopic);
+                    if(subscribedTopic.equals(topic)){
+                        log.info("subscribe topic == topic");
+                        String clientId = subscription.get("clientid").asText();
+                        ((ArrayList<String>) subscription_data.get("client_id")).add(clientId);
+                        subscription_response.setData(subscription_data);
+
+                    }
+                }
+                return subscription_response;
+            } else {
+                System.err.println("HTTP request failed: " + response.getStatusLine());
+            }
+        }catch(IOException e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed to reach Subscription data", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
+    private boolean acceptableRide(Integer rideId){
+        Ride ride = rideDao.findById(rideId).orElseThrow();
+        if (ride.getRideStatus().equals(RideStatus.Created)){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+
+
     private boolean emqxSubscriberFinder(String topic){
         String baseUrl = "http://192.168.12.218:18083"; // Replace with your EMQX host and port
         String topicFilter = topic; // Replace with the topic you're interested in
@@ -246,6 +314,8 @@ public class RideServiceImpl implements RideService {
                     String clientId = subscription.get("clientid").asText();
 
                     if (subscribedTopic.equals(topic)) {
+
+
                         System.out.println("Client ID " + clientId + " is subscribed to topic " + topic);
                         return true;
                     }

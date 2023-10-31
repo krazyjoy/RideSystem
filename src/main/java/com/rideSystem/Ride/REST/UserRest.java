@@ -1,8 +1,10 @@
 package com.rideSystem.Ride.REST;
 
 
+// import com.rideSystem.Ride.JWT.JwtUtil;
 import com.rideSystem.Ride.POJO.User;
 import com.rideSystem.Ride.wrapper.UserWrapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,8 +15,7 @@ import java.util.Map;
 public interface UserRest {
 
     @PostMapping(path="/signup")
-    public ResponseEntity<String> signUp(@RequestBody(required = true)
-                                         Map<String, String> requestMap);
+    public ResponseEntity<String> signUp(@RequestBody(required = true) Map<String, String> requestMap);
 
     @PostMapping(path="/login")
     public ResponseEntity<String> login(@RequestBody(required = true)
@@ -34,4 +35,15 @@ public interface UserRest {
 
     @PostMapping(path="/changePassword")
     public ResponseEntity<String> changePassword(@RequestBody Map<String,String> requestMap);
+
+    @GetMapping(path="/getuser/{uid}")
+    public ResponseEntity<User> getUser(@PathVariable("uid") Integer user_id);
+
+    @GetMapping(path="/getuser/username")
+    public ResponseEntity<User> getUserByName(@RequestParam("username") String username);
+
+
+    @GetMapping("/logout")
+    public ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader);
+
 }

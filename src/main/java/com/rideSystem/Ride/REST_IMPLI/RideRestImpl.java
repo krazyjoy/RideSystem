@@ -64,4 +64,14 @@ public class RideRestImpl implements RideRest {
         }
         return Response.failedResponse("failed (rideServiceImpl): request Order", HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    @Override
+    public Response subscriptions(String topic){
+        try{
+            return rideService.subscriptions(topic);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return  Response.failedResponse("failed (rideServiceImpl): subscriptions", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }

@@ -7,23 +7,28 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
-
+@Slf4j
 @Component
 @AllArgsConstructor
 public class JwtUtil {
     //using this to try and hide the secret key
     //Dotenv dotenv = Dotenv.load();
-    //private final String secretKey = dotenv.get("SECRET");
+    //private final String secretKey = dotenv.get("SECRET")
+    //;
+
+    public JwtUtil(){
+
+    }
     private final String secret = "salaisuus";
 
+    private Set<String> invalidatedTokens = new HashSet<>();
     public String extractUsername(String token) {
         return extractClaims(token, Claims::getSubject);
     }
@@ -55,12 +60,21 @@ public class JwtUtil {
                 .setClaims(claims)
                 .setSubject(username)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 10))
+                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 2 ))
                 .signWith(SignatureAlgorithm.HS256, secret).compact();
     }
 
     public boolean validateToken(String token, UserDetails userDetails){
+        log.info("token {}",token);
         final String userName = extractUsername(token);
         return (userName.equals(userDetails.getUsername()) && !hasTokenExpired(token));
+    }
+
+    public void expireToken(String token){
+        invalidatedTokens.add(token);
+    };
+
+    public boolean isTokenExpired(String token){
+        return invalidatedTokens.contains(token);
     }
 }

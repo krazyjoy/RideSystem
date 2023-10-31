@@ -5,6 +5,8 @@ import com.rideSystem.Ride.wrapper.UserWrapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 import java.util.Map;
@@ -23,4 +25,12 @@ public interface UserService {
 
     ResponseEntity<User> updatePersonalAccount(@PathVariable("userId") Integer id,
                                                       @RequestBody User updated_user);
+
+
+    ResponseEntity<User> getUser(@PathVariable("uid") Integer user_id);
+
+    ResponseEntity<User> getUserByName(@RequestParam("username") String username);
+
+    ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader);
+
 }

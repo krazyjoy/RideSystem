@@ -16,4 +16,6 @@ public interface RideService {
     Response cancelRide(Integer rideId, Map<String,String> requestMap);
 
     Response requestOrder(Integer orderId, Integer rideId, Map<String,String> requestMap);
+
+    Response subscriptions(String topic);
 }

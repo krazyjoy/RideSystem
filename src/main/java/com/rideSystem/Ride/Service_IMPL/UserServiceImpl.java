@@ -2,6 +2,9 @@ package com.rideSystem.Ride.Service_IMPL;
 
 import com.rideSystem.Ride.Constants.RideConstants;
 import com.rideSystem.Ride.DAO.UserDao;
+//import com.rideSystem.Ride.JWT.CustomerUsersDetailsService;
+//import com.rideSystem.Ride.JWT.JwtFilter;
+//import com.rideSystem.Ride.JWT.JwtUtil;
 import com.rideSystem.Ride.JWT.CustomerUsersDetailsService;
 import com.rideSystem.Ride.JWT.JwtFilter;
 import com.rideSystem.Ride.JWT.JwtUtil;
@@ -15,10 +18,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+//import org.springframework.security.authentication.AuthenticationManager;
+//import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+//import org.springframework.security.core.Authentication;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import javax.print.DocFlavor;
 
@@ -52,6 +59,7 @@ public class UserServiceImpl implements UserService {
     }
 
 
+
     @Override
     public ResponseEntity<String> signUp(Map<String, String> requestMap){
         log.info("Inside signup {}", requestMap);
@@ -80,7 +88,7 @@ public class UserServiceImpl implements UserService {
         log.info("Inside login");
 
         try{
-            // create an authenticator
+             //create an authenticator
             Authentication auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(requestMap.get("userName"), requestMap.get("password"))
             );
@@ -101,6 +109,7 @@ public class UserServiceImpl implements UserService {
                     return new ResponseEntity<String>("{\"message\":\""+"Wait for admin approval."+"\"}", HttpStatus.BAD_REQUEST);
                 }
             }
+
         }catch(Exception ex){
             ex.printStackTrace();
         }
@@ -111,9 +120,9 @@ public class UserServiceImpl implements UserService {
     public ResponseEntity<List<UserWrapper>> getAllUsers(){
         try{
             log.info("get all users()");
-            return jwtFilter.isAdmin()?new ResponseEntity<>(userDao.getAllUsers(), HttpStatus.OK): new ResponseEntity<>(
-                    new ArrayList<>(), HttpStatus.UNAUTHORIZED);
-            //return new ResponseEntity<>(userDao.getAllUsers(), HttpStatus.OK);
+//            return jwtFilter.isAdmin()?new ResponseEntity<>(userDao.getAllUsers(), HttpStatus.OK): new ResponseEntity<>(
+//                    new ArrayList<>(), HttpStatus.UNAUTHORIZED);
+            return new ResponseEntity<>(userDao.getAllUsers(), HttpStatus.OK);
 
         }catch(Exception e){
             e.printStackTrace();
@@ -125,7 +134,9 @@ public class UserServiceImpl implements UserService {
     public ResponseEntity<String> updateUser(Map<String, String> requestMap){
         try{
             log.info("inside update user status");
-            if(jwtFilter.isAdmin()){
+            //if(jwtFilter.isAdmin()){
+
+            if(true){
                 log.info("is admin");
                 // TODO:
                 //Optional<User> optional = userDao.findByUserName(requestMap.get("userName")); userName did not work
@@ -247,5 +258,39 @@ public class UserServiceImpl implements UserService {
             e.printStackTrace();
         }
         return new ResponseEntity<User>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Override
+    public ResponseEntity<User> getUser(Integer user_id) {
+        try {
+            log.info("UserServiceImpl: user_id : {}", user_id);
+            User exists_user = userDao.findById(user_id).orElseThrow();
+            log.info("exists_user: {}", exists_user.getUserName());
+            return new ResponseEntity<>(exists_user, HttpStatus.OK);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return new ResponseEntity<User>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Override
+    public ResponseEntity<User> getUserByName(String username) {
+        try{
+            log.info("GetUserByName: {}", username);
+            User exist_user= userDao.findByUserName(username);
+            log.info("exist_user: {}", exist_user.getUserName());
+            return new ResponseEntity<>(exist_user, HttpStatus.OK);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return new ResponseEntity<>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
+    @Override
+    public ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader){
+        String token = tokenHeader.replace("Bearer ", "");
+        jwtUtil.expireToken(token);
+        return ResponseEntity.ok("Logged out successfully");
     }
 }
