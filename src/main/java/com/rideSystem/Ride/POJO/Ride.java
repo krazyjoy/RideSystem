@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
+@NamedQuery(name="Ride.findLatestRide", query="SELECT r FROM Ride r ORDER BY r.orderCreatedTime DESC")
+
 // @NamedQuery(name="Ride.createRideRequest", query="insert into Rides(passenger_id, departure_longitude, departure_latitude)")
 @Component
 @Data

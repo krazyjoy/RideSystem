@@ -23,11 +23,15 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static com.rideSystem.Ride.utils.Response.failedResponse;
@@ -51,7 +55,7 @@ public class RideServiceImpl implements RideService {
     @Override
     public Response driverAcceptRideSession(Integer rideId, Map<String,String> requestMap){
 
-        log.info("Inside createRideSession rideId {}, requestMap {}", rideId, requestMap);
+        log.info("Inside Driver Accept RideSession rideId {}, requestMap {}", rideId, requestMap);
         Response sessionResponse = new Response();
         if(validateCreateSessionMap(requestMap)){
            User driver = userDao.findById(Integer.parseInt(requestMap.get("driverId"))).orElseThrow();
@@ -72,21 +76,24 @@ public class RideServiceImpl implements RideService {
                 if(mqttPushClient!=null){
                     MqttSubClient mqttSubClient = new MqttSubClient(mqttPushClient);
                     Map<String,Object> rideMessage = new HashMap<>();
-                    if(emqxSubscriberFinder(channel)){
+                    // if(emqxSubscriberFinder(channel)){
                         if(acceptableRide(rideId)) {
                             mqttSubClient.subscribe(channel, 2);
                             rideMessage.put("status", 0);
                             rideMessage.put("msg", "success");
                             rideMessage.put("data", "channel: " + channel);
 
+                            // update ride status
+                            ride.setDriverId(driver);
+                            ride.setDriverReceivedOrderTime(LocalDateTime.now());
                             ride.setRideStatus(RideStatus.Received_Order);
+                            rideDao.save(ride);
                             mqttPushClient.publish(2, false,channel, rideMessage);
                             sessionResponse.setStatus(0);
                             sessionResponse.setMsg("success");
                             HashMap<String,Object> acceptSession = new HashMap<>();
                             acceptSession.put("channel", channel);
                             sessionResponse.setData(acceptSession);
-
                         }else{
                             rideMessage.put("status", 1);
                             rideMessage.put("msg", "already subscribed");
@@ -94,9 +101,9 @@ public class RideServiceImpl implements RideService {
                             sessionResponse.setStatus(1);
                             sessionResponse.setMsg("Ride has been accepted by others");
                         }
-                    }else{
-                        log.info("something went wrong in emqx");
-                    }
+//                    }else{
+//                        log.info("something went wrong in emqx");
+//                    }
                 }
             }else{
                 sessionResponse.setStatus(1);
@@ -139,16 +146,28 @@ public class RideServiceImpl implements RideService {
                 log.info("request Ride after init: ride {}", ride.getRideId());
                 User passenger = userDao.findById(Integer.parseInt(requestMap.get("uid"))).orElseThrow();
                 // mqtt send
-                Map<String,Object> request_ride_response = ObjectToHashMapConverter.convertObjectToMap(ride);
-                request_ride_response.put("province", passenger.getState());
-                request_ride_response.put("city", passenger.getCity());
+                ride.setRideStatus(RideStatus.Created);
+                // save order created time
+                ride.setOrderCreatedTime(LocalDateTime.now());
+                // sort by latest ride
+                log.info("ride order created time: {}", ride.getOrderCreatedTime());
+
+                // set mqtt topic
                 String channel = passenger.getState();
                 ride.setMQTTTopic(channel);
-                log.info("request Ride: ride {}", ride.getRideId());
-                log.info(ride.getMQTTTopic());
-                ride.setRideStatus(RideStatus.Created);
-                rideDao.save(ride);
 
+                rideDao.save(ride);
+                Pageable pageable = PageRequest.of(0, 1); // Limit to 1 result
+                Page<Ride> latestRidePage = rideDao.findLatestRide(pageable);
+                Ride latestRide = latestRidePage.getContent().get(0);
+                log.info("latest rides: {}", latestRide);
+
+                // send ride object to mqtt
+                Map<String,Object> request_ride_response = ObjectToHashMapConverter.convertObjectToMap(latestRide);
+                request_ride_response.put("province", passenger.getState());
+                request_ride_response.put("city", passenger.getCity());
+
+                log.info(ride.getMQTTTopic());
                 mqttConfiguration.setTopic(channel);
                 MqttPushClient mqttPushClient;
                 mqttPushClient = mqttConfiguration.getMqttPushClient();
@@ -386,6 +405,7 @@ public class RideServiceImpl implements RideService {
         if(requestMap.containsKey("uid") && requestMap.containsKey("pickUpLong")
         && requestMap.containsKey("pickUpLat") && requestMap.containsKey("pickUpResolvedAddress")
         && requestMap.containsKey("destResolvedAddress") && requestMap.containsKey("rideType")
+                && requestMap.containsKey("destLat") && requestMap.containsKey("destLong")
         && requestMap.containsKey("province") && requestMap.containsKey("city")){
             log.info("validate: request ride map = success");
             return true;
@@ -428,6 +448,12 @@ public class RideServiceImpl implements RideService {
         }
         if(requestMap.containsKey("pickUpResolvedAddress")){
             ride.setDepartureAddress(requestMap.get("pickUpResolvedAddress"));
+        }
+        if(requestMap.containsKey("destLat")){
+            ride.setDestinationLatitude(Float.parseFloat(requestMap.get("destLat")));
+        }
+        if(requestMap.containsKey("destLong")){
+            ride.setDestinationLongitude(Float.parseFloat(requestMap.get("destLong")));
         }
         if(requestMap.containsKey("destResolvedAddress")){
             ride.setDestinationAddress(requestMap.get("destResolvedAddress"));
