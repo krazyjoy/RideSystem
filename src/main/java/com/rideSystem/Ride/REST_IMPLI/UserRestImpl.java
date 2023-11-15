@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -114,7 +115,16 @@ public class UserRestImpl implements UserRest {
         }
         return new ResponseEntity<>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
     }
+    @Override
+    public ResponseEntity<User> getUserByCell(@RequestParam("contact_number") String contact_number){
+        try{
+            return userService.getUserByCell(contact_number);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
 
+        return new ResponseEntity<>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
     @Override
     public ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader){
         try{

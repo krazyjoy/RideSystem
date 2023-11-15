@@ -23,6 +23,14 @@ public interface RideRest {
     @PutMapping(path="/{oId}/{rId}")
     public Response requestOrder(@PathVariable("oId") Integer orderId, @PathVariable("rId") Integer rideId, @RequestBody(required = true) Map<String,String> requestMap);
 
+    @GetMapping(path="/ridestatus/{rId}")
+    public Response listenToRideStatus(@PathVariable("rId") Integer rideId);
     @GetMapping(path="/subscriptions")
     public Response subscriptions(@RequestParam("topic") String topic);
+
+    @PutMapping(path="/update/ridestatus")
+    public Response updateRideStatus(@RequestParam("rId") Integer rideId, @RequestBody(required=true) Map<String,String> requestMap);
+
+    @GetMapping(path="/status")
+    public Response getRideStatus(@RequestParam("rId") Integer rideId);
 }

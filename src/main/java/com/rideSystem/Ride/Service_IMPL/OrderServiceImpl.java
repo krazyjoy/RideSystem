@@ -42,6 +42,23 @@ public class OrderServiceImpl implements OrderService {
             if(validateCreateOrderMap(requestMap)){
 
                 Order order = initializeOrder(requestMap);
+
+
+                Integer rideId = order.getRideId();
+
+                Ride ride = rideDao.findById(rideId).orElseThrow();
+                Float time_of_travel = random_number(1,120);
+                ride.setTimeOfTravel(time_of_travel);
+                rideDao.save(ride);
+
+                String state = ride.getMQTTTopic();
+
+                order = filter_price_by_state(order.getOrderId(), state);
+
+                Float total_price = calculate_total_price(order, ride);
+
+                order.setTotalPrice(total_price);
+                orderDao.save(order);
                 Map<String,Object> order_data = ObjectToHashMapConverter.convertObjectToMap(order);
 
                 log.info("order data {}",order_data);
@@ -120,7 +137,110 @@ public class OrderServiceImpl implements OrderService {
         order_data.put("totalPrice", totalPrice);
         return  order_data;
     }
+    public Order payment(Integer orderId){
+        Order order = orderDao.findById(orderId).orElseThrow();
+        Integer rideId = order.getRideId();
+        Ride ride = rideDao.findById(rideId).orElseThrow();
+        order.setOrderPlatform("STRIPE");
+        order.setPlatformId(String.valueOf("32-853295285"));
+        return order;
+    }
+    public Response paymentResult(Integer order_id, Map<String, Boolean> success){
+        try{
+            Order order = orderDao.findById(order_id).orElseThrow();
 
+            if(success.containsKey("success")){
+                if(success.get("success").equals(true)){
+                    order.setPlatformPaymentResult("success");
+                    order.setOrderStatus(OrderStatus.PAID);
+                    orderDao.save(order);
+                    Response success_payment = Response.successResponse();
+                    Map<String,Object> order_response = ObjectToHashMapConverter.convertObjectToMap(order);
+                    success_payment.setData(order_response);
+                    return success_payment;
+                }
+                else{
+                    log.info("failed to pay");
+                    return Response.failedResponse("failed: payment result failed", HttpStatus.BAD_REQUEST);
 
+                }
+            }
+
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed: payment result", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    public Order filter_price_by_state(Integer order_id, String state){
+
+        Order order = orderDao.findById(order_id).orElseThrow();
+        Float starting_price;
+        Float time_price;
+        Float travel_n_gas_price;
+
+        Float dynamic_price = random_number(0, 10);
+        if(state.equals("Hawaii")){
+            starting_price = (float) 20;
+            time_price = (float) 3;
+            travel_n_gas_price = (float) 2;
+        }
+        else if(state.equals("Georgia")){
+            starting_price = (float) 25;
+            time_price = (float) 4;
+            travel_n_gas_price = (float) 1;
+        }
+        else if(state.equals("Pennsylvania")){
+            starting_price = (float) 16;
+            time_price = (float) 3;
+            travel_n_gas_price = (float) 2;
+        }
+        else if(state.equals("Texas")){
+            starting_price = (float) 18;
+            time_price = (float) 3.2;
+            travel_n_gas_price = (float) 1;
+        }
+        else{
+            starting_price = (float) 15;
+            time_price = (float) 2.9;
+            travel_n_gas_price = (float) 4;
+        }
+
+        order.setDynamicPrice(dynamic_price);
+        order.setSpecialLocationFee((float)0);
+        order.setStartingPrice(starting_price);
+        order.setTimePrice(time_price);
+        order.setTravelGasFee(travel_n_gas_price);
+        orderDao.save(order);
+        return order;
+    }
+    public float random_number(int upper_limit, int lower_limit){
+        return (float) Math.random() * (upper_limit - lower_limit) + lower_limit;
+    }
+    public float calculate_total_price(Order order, Ride ride){
+        if(order.getStartingPrice() != null && order.getSpecialLocationFee() != null
+        && order.getDynamicPrice() != null && order.getTimePrice() != null && order.getTravelGasFee() != null
+        && ride.getTimeOfTravel() != null){
+            Float starting_price = order.getStartingPrice();
+            Float dynamic_price = order.getDynamicPrice();
+            Float time_price = ride.getTimeOfTravel();
+            Double travel_distance = haversine_distance(ride.getDepartureLatitude(), ride.getDepartureLatitude(),
+                    ride.getDestinationLatitude(), ride.getDepartureLongitude());
+            Float travel_time = (float) (time_price * travel_distance);
+            Float travel_n_gas_fee = (float) (travel_distance * order.getTravelGasFee());
+            Float special_location_fee = order.getSpecialLocationFee();
+            Float total_price = starting_price + travel_time + (float)(dynamic_price * travel_distance)+travel_n_gas_fee + special_location_fee;
+            return total_price;
+        }
+        return 0;
+    }
+    public double haversine_distance(Float depart_lat, Float depart_long, Float dest_lat, Float dest_long){
+        double R = 3958.8;
+        double rlat1 = depart_lat * (Math.PI/180);
+        double rlat2 = dest_lat * (Math.PI/180);
+        double difflat = rlat2 - rlat1;
+        double difflong = (dest_long - depart_long)*(Math.PI/180);
+        double d =2 * R * Math.asin(Math.sqrt(Math.sin(difflat/2)*Math.sin(difflat/2)+Math.cos(rlat1)*Math.cos(rlat2)*Math.sin(difflong/2)*Math.sin(difflong/2)));
+        return d;
+    }
 
 }

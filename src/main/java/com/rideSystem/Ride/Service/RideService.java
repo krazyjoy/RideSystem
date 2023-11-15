@@ -18,4 +18,10 @@ public interface RideService {
     Response requestOrder(Integer orderId, Integer rideId, Map<String,String> requestMap);
 
     Response subscriptions(String topic);
+
+    Response listenToRideStatus(Integer rideId);
+
+    Response updateRideStatus(Integer rideId, Map<String,String> requestMap);
+
+    Response getRideStatus(Integer rideId);
 }

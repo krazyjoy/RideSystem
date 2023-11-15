@@ -1,5 +1,6 @@
 package com.rideSystem.Ride.REST;
 
+import com.rideSystem.Ride.POJO.Order;
 import com.rideSystem.Ride.utils.Response;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,4 +13,9 @@ public interface OrderRest {
     @GetMapping(path="/{oId}")
     public Response getOrder(@PathVariable("oId") Integer orderId, @RequestBody(required = true) Map<String,String> requestMap);
 
+    @GetMapping(path="/payment")
+    public Order payment(@RequestParam("order_id") Integer orderId);
+
+    @PostMapping(path="/payment/result/{oId}")
+    public Response paymentResult(@PathVariable("oId") Integer orderId,@RequestBody(required = true) Map<String, Boolean> success);
 }

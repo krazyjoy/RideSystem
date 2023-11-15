@@ -42,7 +42,8 @@ public interface UserRest {
     @GetMapping(path="/getuser/username")
     public ResponseEntity<User> getUserByName(@RequestParam("username") String username);
 
-
+    @GetMapping(path="/getuser/contactNumber")
+    public ResponseEntity<User> getUserByCell(@RequestParam("contact_number") String contact_number);
     @GetMapping("/logout")
     public ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader);
 

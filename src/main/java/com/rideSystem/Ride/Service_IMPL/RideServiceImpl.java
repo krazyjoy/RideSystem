@@ -8,12 +8,14 @@ import com.rideSystem.Ride.POJO.Ride;
 import com.rideSystem.Ride.POJO.RideStatus;
 import com.rideSystem.Ride.POJO.RideType;
 import com.rideSystem.Ride.POJO.User;
+
 import com.rideSystem.Ride.Service.RideService;
 import com.rideSystem.Ride.mqtt.MqttConfiguration;
 import com.rideSystem.Ride.mqtt.MqttPushClient;
 import com.rideSystem.Ride.mqtt.MqttSubClient;
 import com.rideSystem.Ride.utils.ObjectToHashMapConverter;
 import com.rideSystem.Ride.utils.Response;
+import jakarta.persistence.criteria.CriteriaBuilder;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -28,6 +30,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -39,6 +44,7 @@ import static com.rideSystem.Ride.utils.Response.failedResponse;
 @NoArgsConstructor
 @Slf4j
 @Service
+
 public class RideServiceImpl implements RideService {
     @Autowired
     UserDao userDao;
@@ -48,19 +54,56 @@ public class RideServiceImpl implements RideService {
     MqttConfiguration mqttConfiguration;
 
 
+
+    SimpMessagingTemplate messagingTemplate;
+    Queue<Ride> awaiting_request = new LinkedList<>();
+    private Map<Integer, RideStatus> lastStatusMap = new HashMap<>();
+    private Set<Integer> NewAcceptedRideIds = new HashSet<>();
+    @Autowired
     public RideServiceImpl(UserDao userDao, RideDao rideDao){
         this.userDao = userDao;
         this.rideDao = rideDao;
+        this.messagingTemplate = messagingTemplate;
     }
     @Override
     public Response driverAcceptRideSession(Integer rideId, Map<String,String> requestMap){
 
         log.info("Inside Driver Accept RideSession rideId {}, requestMap {}", rideId, requestMap);
+        Pageable pageable = PageRequest.of(0, 10); // Limit to 1 result
+        Page<Ride> latestRidePage = rideDao.findLatestRide(pageable);
+        List<Ride> latestRide = latestRidePage.getContent();
+
+
         Response sessionResponse = new Response();
+
         if(validateCreateSessionMap(requestMap)){
            User driver = userDao.findById(Integer.parseInt(requestMap.get("driverId"))).orElseThrow();
 
             if(driver != null){
+
+                Ride nearest_ride = getNearestRide(Float.parseFloat(requestMap.get("longitude")),
+                        Float.parseFloat(requestMap.get("latitude")), rideId);
+
+
+                int nearest_ride_id = nearest_ride.getRideId();
+
+                boolean accepted = false;
+                if(acceptableRide(nearest_ride_id)) {
+                    if(nearest_ride_id == rideId){
+                        nearest_ride.setDriverId(driver);
+                        nearest_ride.setDriverReceivedOrderTime(LocalDateTime.now());
+                        nearest_ride.setRideStatus(RideStatus.Received_Order);
+                        rideDao.save(nearest_ride);
+                        accepted = true;
+                        NewAcceptedRideIds.add(rideId);
+                    }else{
+                        log.info("the nearest last 3 ride is {}, but requested ride is {}", nearest_ride_id, rideId);
+                    }
+                }else{
+                    Ride requested_ride = rideDao.findById(rideId).orElseThrow();
+                    log.info("ride: {} status is {}", rideId, requested_ride.getRideStatus());
+                }
+
                 // create MQTT channel with rideId, return channelId
 
                 System.out.println(mqttConfiguration.getClientid());
@@ -76,19 +119,18 @@ public class RideServiceImpl implements RideService {
                 if(mqttPushClient!=null){
                     MqttSubClient mqttSubClient = new MqttSubClient(mqttPushClient);
                     Map<String,Object> rideMessage = new HashMap<>();
-                    // if(emqxSubscriberFinder(channel)){
-                        if(acceptableRide(rideId)) {
+
+                        if(accepted) {
                             mqttSubClient.subscribe(channel, 2);
                             rideMessage.put("status", 0);
                             rideMessage.put("msg", "success");
                             rideMessage.put("data", "channel: " + channel);
 
-                            // update ride status
-                            ride.setDriverId(driver);
-                            ride.setDriverReceivedOrderTime(LocalDateTime.now());
-                            ride.setRideStatus(RideStatus.Received_Order);
-                            rideDao.save(ride);
-                            mqttPushClient.publish(2, false,channel, rideMessage);
+                            Map<String,Object> accept_ride_response = new HashMap<>();
+                            accept_ride_response.put("accepted", true);
+                            log.info("accept_ride_response: {}", accept_ride_response);
+                            mqttPushClient.publish(2, false,channel, accept_ride_response);
+
                             sessionResponse.setStatus(0);
                             sessionResponse.setMsg("success");
                             HashMap<String,Object> acceptSession = new HashMap<>();
@@ -101,9 +143,6 @@ public class RideServiceImpl implements RideService {
                             sessionResponse.setStatus(1);
                             sessionResponse.setMsg("Ride has been accepted by others");
                         }
-//                    }else{
-//                        log.info("something went wrong in emqx");
-//                    }
                 }
             }else{
                 sessionResponse.setStatus(1);
@@ -117,12 +156,75 @@ public class RideServiceImpl implements RideService {
         return sessionResponse;
 
     }
+    public Ride getNearestRide(float latitude, float longitude, int requested_ride_id){
+
+
+        List<Integer> created_session_ids = new ArrayList<>();
+        log.info("lastStatusMap: {}", lastStatusMap);
+        // find all created sessions
+        for(int session_id: lastStatusMap.keySet()){
+            created_session_ids.add(session_id);
+        }
+        List<Integer> sorted_created_session_ids = new ArrayList<>();
+        int n = created_session_ids.size();
+        Integer[] tmp_sessions = created_session_ids.toArray(new Integer[0]);
+        Arrays.sort(tmp_sessions,  Collections.reverseOrder());
+        for(int session_id: tmp_sessions){
+            sorted_created_session_ids.add(session_id);
+
+        }
+        log.info("created session ids: {}", created_session_ids);
+        log.info("sorted session ids: {}", sorted_created_session_ids);
+
+        Float driver_latitude = latitude;
+        Float driver_longitude = longitude;
+
+        double min_hd = Double.MAX_VALUE;
+        double[] hds = new double[3];
+
+        int min_hds_index = 0;
+        int min_hd_session_id=0;
+        int requested_index = sorted_created_session_ids.get(0);
+        Map<Integer, Double> dis_map = new HashMap<>();
+        if(sorted_created_session_ids.size() < 3){
+            n = sorted_created_session_ids.size();
+        }else{
+            n = 3;
+        }
+
+        for(int j=0; j<n; j++) {
+            int session_id = sorted_created_session_ids.get(j);
+            dis_map.put(session_id, Double.MAX_VALUE);
+            Ride ride = rideDao.getById(session_id);
+            Float passenger_departure_latitude = ride.getDepartureLatitude();
+            Float passenger_departure_longitude = ride.getDepartureLongitude();
+
+            double hd = haversine_distance(driver_latitude, driver_longitude, passenger_departure_latitude, passenger_departure_longitude);
+            log.info("hd: {}", hd);
+            dis_map.put(session_id, hd);
+            if(hd < min_hd){
+                min_hd_session_id = session_id;
+                min_hd = Math.min(hd, min_hd);
+
+            }
+        }
+        log.info("dis map: {}", dis_map);
+        if(dis_map.get(requested_ride_id) == min_hd){
+            log.info("prioritize current");
+            min_hd_session_id = requested_ride_id;
+        }
+        log.info("min_hd_session_id: {}", min_hd_session_id);
+
+        Ride ride = rideDao.findById(min_hd_session_id).orElseThrow();
+        return ride;
+    }
 
     @Override
     public Response getRideSession(Integer rideId, Map<String, String> requestMap) {
         log.info("inside getRideSession: rideId is {}, requestMap {}",rideId, requestMap);
         try{
             if(validateGetSessionMap(requestMap)){
+
                 Response sessionResponse = Response.successResponse();
 
                 Ride ride = rideDao.findById(rideId).orElseThrow();
@@ -136,14 +238,66 @@ public class RideServiceImpl implements RideService {
         Response sessionResponse = failedResponse("getRideSession",HttpStatus.INTERNAL_SERVER_ERROR);
         return sessionResponse;
     }
+    @Override
+    public Response updateRideStatus(Integer rideId, Map<String,String> requestMap){
+        try{
+            Ride ride = rideDao.findById(rideId).orElseThrow();
+            if(requestMap.containsKey("ride_status")){
+                String ride_status = requestMap.get("ride_status");
+                if(ride_status.equalsIgnoreCase("Received_Order")){
+                    ride.setRideStatus(RideStatus.Received_Order);
+                }
+                else if(ride_status.equalsIgnoreCase("Departed")){
+                    ride.setRideStatus(RideStatus.Departed);
+                }
+                else if(ride_status.equalsIgnoreCase("Pickedup")){
+                    ride.setRideStatus(RideStatus.PickedUp);
+                    ride.setPickedUpTime(LocalDateTime.now());
+                }
+                else if(ride_status.equalsIgnoreCase("Arrived")){
+                    ride.setRideStatus(RideStatus.Arrived);
+                    ride.setArrivalTime(LocalDateTime.now());
 
+                }
+                else if(ride_status.equalsIgnoreCase("Terminated")){
+                    ride.setRideStatus(RideStatus.Terminated);
+                    //ride.setCancelTime(LocalDateTime.now());
+                }
+                else{
+                    log.info("non existed ride status in update ride status");
+                }
+                rideDao.save(ride);
+                Map<String,Object> updated_ride_response = ObjectToHashMapConverter.convertObjectToMap(ride);
+                Response ride_response = Response.successResponse();
+                ride_response.setData(updated_ride_response);
+            }
+            else{
+                log.info("invalid request map in update ride status");
+                return failedResponse("failed update ride status", HttpStatus.BAD_REQUEST);
+
+            }
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed: update Ride Status", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    public static double haversine_distance(Float driver_lat, Float driver_long, Float passenger_lat, Float passenger_long){
+        double R = 3958.8;
+        double rlat1 = driver_lat * (Math.PI/180);
+        double rlat2 = passenger_lat * (Math.PI/180);
+        double difflat = rlat2 - rlat1;
+        double difflong = (passenger_long - driver_long)*(Math.PI/180);
+        double d =2 * R * Math.asin(Math.sqrt(Math.sin(difflat/2)*Math.sin(difflat/2)+Math.cos(rlat1)*Math.cos(rlat2)*Math.sin(difflong/2)*Math.sin(difflong/2)));
+        return d;
+    }
     @Override
     public Response requestRide(Map<String, String> requestMap){
         log.info("inside request ride requestMap: {}" ,requestMap);
         try{
             if(validateRequestRideMap(requestMap)){
                 Ride ride = getRideFromMap(requestMap);
-                log.info("request Ride after init: ride {}", ride.getRideId());
+
                 User passenger = userDao.findById(Integer.parseInt(requestMap.get("uid"))).orElseThrow();
                 // mqtt send
                 ride.setRideStatus(RideStatus.Created);
@@ -162,20 +316,24 @@ public class RideServiceImpl implements RideService {
                 Ride latestRide = latestRidePage.getContent().get(0);
                 log.info("latest rides: {}", latestRide);
 
+                awaiting_request.add(latestRide);
                 // send ride object to mqtt
                 Map<String,Object> request_ride_response = ObjectToHashMapConverter.convertObjectToMap(latestRide);
                 request_ride_response.put("province", passenger.getState());
                 request_ride_response.put("city", passenger.getCity());
-
+                log.info("request_ride_response: {}",request_ride_response);
                 log.info(ride.getMQTTTopic());
                 mqttConfiguration.setTopic(channel);
-                MqttPushClient mqttPushClient;
-                mqttPushClient = mqttConfiguration.getMqttPushClient();
-                if(mqttPushClient!=null){
-                    MqttSubClient mqttSubClient = new MqttSubClient(mqttPushClient);
-                    mqttSubClient.subscribe(channel, 2);
-                    mqttPushClient.publish(2, false,channel,request_ride_response);
-                }
+                awaiting_request.add(ride);
+//                MqttPushClient mqttPushClient;
+//                mqttPushClient = mqttConfiguration.getMqttPushClient();
+//                if(mqttPushClient!=null){
+//                    MqttSubClient mqttSubClient = new MqttSubClient(mqttPushClient);
+//                    mqttSubClient.subscribe(channel, 2);
+//                    mqttPushClient.publish(2, false,channel,request_ride_response);
+//                }
+
+
                 // response
 
                 Response response = Response.successResponse();
@@ -241,7 +399,7 @@ public class RideServiceImpl implements RideService {
 
     @Override
     public Response subscriptions(String topic){
-        String baseUrl = "http://192.168.12.218:18083"; // Replace with your EMQX host and port
+        String baseUrl = "http://10.157.37.70:18083"; // Replace with your EMQX host and port
         String topicFilter = topic; // Replace with the topic you're interested in
         String username = "admin";
         String password = "public";
@@ -303,7 +461,7 @@ public class RideServiceImpl implements RideService {
 
 
     private boolean emqxSubscriberFinder(String topic){
-        String baseUrl = "http://192.168.12.218:18083"; // Replace with your EMQX host and port
+        String baseUrl = "http://10.157.37.70:18083"; // Replace with your EMQX host and port
         String topicFilter = topic; // Replace with the topic you're interested in
         String username = "admin";
         String password = "public";
@@ -348,6 +506,94 @@ public class RideServiceImpl implements RideService {
         }
         return false;
     }
+    @Override
+    public Response listenToRideStatus(Integer rideId){
+        try{
+            //log.info("inside: listenToRideStatus");
+            Response statusResponse = Response.successResponse();
+            statusResponse.setStatus(0);
+            log.info("NewAcceptedRideId: {}", NewAcceptedRideIds);
+
+            for(Integer NewAcceptedRideId: NewAcceptedRideIds){
+                log.info("New accepted ride is: {}",NewAcceptedRideId);
+                log.info("rideId: {}",rideId);
+                if(rideId.equals(NewAcceptedRideId)){
+                    log.info("rideId == NewAcceptedRideId");
+                    statusResponse.setMsg("true");
+                    return statusResponse;
+                }
+            }
+            statusResponse.setMsg("false");
+            return statusResponse;
+
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed: listen to Ride Status", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
+    @Override
+    public Response getRideStatus(Integer rideId){
+        try{
+            Ride ride = rideDao.findById(rideId).orElseThrow();
+            String ride_status = ride.getRideStatus().toString();
+            Response success_response = Response.successResponse();
+            HashMap<String, Object> ride_status_map = new HashMap<>();
+            ride_status_map.put("ride_status", ride_status);
+            success_response.setData(ride_status_map);
+            return success_response;
+
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+        return Response.failedResponse("failed: get ride status", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
+    /* polling ride status change */
+    @Scheduled(fixedDelay=80000) // Poll every 80 seconds
+    public void pollRideStatus(){
+        log.info("inside poll ride status");
+        boolean accepted = false;
+        if(lastStatusMap.isEmpty()){
+            log.info("lastStatusMap: {}",lastStatusMap);
+            // List<Ride> createdRides = rideDao.findByRideStatus(RideStatus.Created);
+            List<Ride> createdRides = new ArrayList<>();
+            Pageable pageable = PageRequest.of(0, 1); // Limit to 1 result
+            Page<Ride> latestRidePage = rideDao.findLatestRide(pageable);
+            Ride latestRide = latestRidePage.getContent().get(0);
+            log.info("create rides: {}", createdRides);
+            int rideId = latestRide.getRideId();
+            createdRides.add(latestRide);
+            lastStatusMap.put(rideId, latestRide.getRideStatus());
+        }else{
+            Pageable pageable = PageRequest.of(0,3);
+            Page<Ride> latestRidePage = rideDao.findLatestRide(pageable);
+            List<Ride> latestRides = latestRidePage.getContent();
+            for(int i=0; i<latestRides.size(); i++){
+                Ride ride = latestRides.get(i);
+
+                lastStatusMap.put(ride.getRideId(), ride.getRideStatus());
+            }
+            log.info("NOT NULL lastStatusMap: {}", lastStatusMap);
+            if(NewAcceptedRideIds.size() > 5){
+                int[] sorted_ids = new int[5];
+                int i=0;
+                for(int id: NewAcceptedRideIds){
+                    sorted_ids[i] = id;
+                    i+=1;
+                }
+                Arrays.sort(sorted_ids);
+                while(NewAcceptedRideIds.size() > 5){
+                    NewAcceptedRideIds.remove(sorted_ids);
+                }
+            }
+        }
+    }
+
+
     private HashMap<String,Object> rideData(Ride ride){
         HashMap<String,Object> data = new HashMap<>();
 

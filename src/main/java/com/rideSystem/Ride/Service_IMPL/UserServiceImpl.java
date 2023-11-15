@@ -26,6 +26,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import javax.print.DocFlavor;
 
@@ -207,9 +208,8 @@ public class UserServiceImpl implements UserService {
             user.setState(requestMap.get("state"));
         if(requestMap.containsKey("city"))
             user.setCity(requestMap.get("city"));
-        if(requestMap.containsKey("status"))
-            user.setStatus("false");
 
+        user.setStatus("true");
         user.setRole("user");
         return user;
     }
@@ -286,7 +286,19 @@ public class UserServiceImpl implements UserService {
         return new ResponseEntity<>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @Override
+    public ResponseEntity<User> getUserByCell(@RequestParam("contact_number") String contact_number){
+        try{
+            log.info("GetUserByCell: {}", contact_number);
+            User exist_user = userDao.findByContactNumber(contact_number);
+            log.info("exist_user: {}", exist_user.getUserName());
+            return new ResponseEntity<>(exist_user, HttpStatus.OK);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
 
+        return new ResponseEntity<>(new User(), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
     @Override
     public ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader){
         String token = tokenHeader.replace("Bearer ", "");

@@ -31,6 +31,7 @@ public interface UserService {
 
     ResponseEntity<User> getUserByName(@RequestParam("username") String username);
 
+    ResponseEntity<User> getUserByCell(@RequestParam("contact_number") String contact_number);
     ResponseEntity<String> logout(@RequestHeader("Authorization") String tokenHeader);
 
 }
