@@ -4,6 +4,15 @@
 - Spring Boot: 3.1.3
 - JAVA 17
 
+## github
+- `bash`
+- `sudo apt install wsl`
+- `ls /mnt/d`
+- joy@Joy-TUF-PC:/mnt/d/Uber/Ride$ git init
+  error: chmod on /mnt/d/Uber/Ride/.git/config.lock failed: Operation not permitted
+  fatal: could not set 'core.repositoryformatversion' to '0'
+- `sudo git init`
+- `sudo chown -R joy:joy /mnt/d/Uber/Ride`
 ## Create Database in Mysql CLI or Workbench
 - CLI
   - `Create database <RideSystem>`

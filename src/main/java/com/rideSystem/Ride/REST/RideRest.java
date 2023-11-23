@@ -33,4 +33,12 @@ public interface RideRest {
 
     @GetMapping(path="/status")
     public Response getRideStatus(@RequestParam("rId") Integer rideId);
+
+    @PostMapping(path="/mqtt/{driverId}")
+    public Response driverOnMqtt(@PathVariable("driverId") Integer driverId, @RequestBody(required = true) Map<String,String> requestMap);
+
+    @DeleteMapping("/deleteAllRides")
+    public Response deleteAllRides();
+
+
 }

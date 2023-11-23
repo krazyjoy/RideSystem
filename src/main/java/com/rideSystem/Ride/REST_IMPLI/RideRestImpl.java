@@ -104,4 +104,25 @@ public class RideRestImpl implements RideRest {
         }
         return  Response.failedResponse("failed (rideRestImpl): get ride status", HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    @Override
+    public Response driverOnMqtt(Integer rideId, Map<String, String> requestMap) {
+        try{
+            return rideService.driverOnMqtt(rideId, requestMap);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+        return Response.failedResponse("failed (rideRestImpl): driver on mqtt", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Override
+    public Response deleteAllRides() {
+        try{
+            return rideService.deleteAllRides();
+        }catch(Exception e){
+            e.printStackTrace();;
+        }
+        return Response.failedResponse("failed (rideRestImpl): delete all rides", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }

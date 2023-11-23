@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 @RestController
 public class OrderRestImpl implements OrderRest {
@@ -60,5 +61,20 @@ public class OrderRestImpl implements OrderRest {
         return Response.failedResponse("failed (OrderRestImpl) : payment result", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-
+    public Response deleteAllOrders(){
+        try{
+            return orderService.deleteAllOrders();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed (Order Rest Impl)", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    public Response deleteOrdersByIds(List<Integer> ids){
+        try{
+            return orderService.deleteOrdersByIds(ids);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed (Order Rest Impl)", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }

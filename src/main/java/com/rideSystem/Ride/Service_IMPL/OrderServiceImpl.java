@@ -243,4 +243,23 @@ public class OrderServiceImpl implements OrderService {
         return d;
     }
 
+    public Response deleteAllOrders(){
+        try{
+            orderDao.deleteAllOrders();
+            return Response.successResponse();
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed: Order Service Impl: ", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    public Response deleteOrdersByIds(List<Integer> ids){
+        try{
+            orderDao.deleteOrdersById(ids);
+            return Response.successResponse();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed at delete Orders by ids", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }

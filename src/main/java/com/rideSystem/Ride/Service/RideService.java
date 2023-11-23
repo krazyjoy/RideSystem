@@ -24,4 +24,8 @@ public interface RideService {
     Response updateRideStatus(Integer rideId, Map<String,String> requestMap);
 
     Response getRideStatus(Integer rideId);
+
+    Response driverOnMqtt(Integer driverId, Map<String, String> requestMap);
+
+    Response deleteAllRides();
 }
