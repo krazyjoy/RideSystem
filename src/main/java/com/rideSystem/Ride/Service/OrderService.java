@@ -3,6 +3,7 @@ package com.rideSystem.Ride.Service;
 import com.rideSystem.Ride.POJO.Order;
 import com.rideSystem.Ride.utils.Response;
 
+import java.util.List;
 import java.util.Map;
 
 public interface OrderService {
@@ -12,4 +13,8 @@ public interface OrderService {
     Order payment(Integer orderId);
 
     Response paymentResult(Integer orderId, Map<String, Boolean> success);
+
+    Response deleteAllOrders();
+
+    Response deleteOrdersByIds(List<Integer> ids);
 }

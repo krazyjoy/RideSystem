@@ -1,12 +1,11 @@
 package com.rideSystem.Ride.mqtt;
 
-import com.rideSystem.Ride.controller.MqttDemoController;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.*;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
+import com.google.gson.Gson;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -82,10 +81,11 @@ public class MqttPushClient{
      * @param pushMessage
      */
     public void publish(int qos, boolean retained, String topic, Map<String,Object> pushMessage) {
+        String jsonString = new Gson().toJson(pushMessage);
         MqttMessage message = new MqttMessage();
         message.setQos(qos);
         message.setRetained(retained);
-        message.setPayload(pushMessage.toString().getBytes());
+        message.setPayload(jsonString.getBytes());
         MqttTopic mTopic = MqttPushClient.getClient().getTopic(topic);
         log.info("checking mTopic: ", mTopic);
 
@@ -96,6 +96,7 @@ public class MqttPushClient{
         try {
             log.info("trying to publish ...");
             mTopic.publish(message);
+            log.info("Published JSON message: {}", jsonString);
 
 
         } catch (Exception e) {

@@ -6,6 +6,8 @@ import lombok.Data;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
+
+@NamedQuery(name="Trajectory.findRideTrajectory", query="SELECT t FROM Trajectory t WHERE t.correspondedRideId = :rideId")
 @Entity
 @Table(name="Trajectory")
 @Data

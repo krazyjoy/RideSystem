@@ -1,21 +1,18 @@
 package com.rideSystem.Ride.Service_IMPL;
-
+import com.rideSystem.Ride.DAO.TrajectoryDao;
+import com.rideSystem.Ride.POJO.*;
+import com.rideSystem.Ride.Scheduled.ScheduleService;
+import com.rideSystem.Ride.mqtt.*;
+import org.eclipse.paho.client.mqttv3.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rideSystem.Ride.DAO.RideDao;
 import com.rideSystem.Ride.DAO.UserDao;
-import com.rideSystem.Ride.POJO.Ride;
-import com.rideSystem.Ride.POJO.RideStatus;
-import com.rideSystem.Ride.POJO.RideType;
-import com.rideSystem.Ride.POJO.User;
-
+import org.json.JSONObject;
 import com.rideSystem.Ride.Service.RideService;
-import com.rideSystem.Ride.mqtt.MqttConfiguration;
-import com.rideSystem.Ride.mqtt.MqttPushClient;
-import com.rideSystem.Ride.mqtt.MqttSubClient;
+
 import com.rideSystem.Ride.utils.ObjectToHashMapConverter;
 import com.rideSystem.Ride.utils.Response;
-import jakarta.persistence.criteria.CriteriaBuilder;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -23,23 +20,25 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
+import org.eclipse.paho.client.mqttv3.MqttException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
-
+import java.lang.Thread;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.rideSystem.Ride.utils.Response.failedResponse;
+import static com.rideSystem.Ride.utils.Response.successResponse;
 
 @NoArgsConstructor
 @Slf4j
@@ -51,24 +50,113 @@ public class RideServiceImpl implements RideService {
     @Autowired
     RideDao rideDao; // no autowire will cause null in rideDao
     @Autowired
+    TrajectoryDao trajectoryDao;
+    @Autowired
     MqttConfiguration mqttConfiguration;
 
 
 
+    List<String> topics = new ArrayList<>();
     SimpMessagingTemplate messagingTemplate;
     Queue<Ride> awaiting_request = new LinkedList<>();
     private Map<Integer, RideStatus> lastStatusMap = new HashMap<>();
     private Set<Integer> NewAcceptedRideIds = new HashSet<>();
+
+//    private MqttServiceImpl mqttServiceImpl = new MqttServiceImpl();
+
+
     @Autowired
-    public RideServiceImpl(UserDao userDao, RideDao rideDao){
+    public RideServiceImpl(UserDao userDao, RideDao rideDao, TrajectoryDao trajectoryDao){
         this.userDao = userDao;
         this.rideDao = rideDao;
-        this.messagingTemplate = messagingTemplate;
+        this.trajectoryDao = trajectoryDao;
+
     }
+
+    @Override
+    public Response driverOnMqtt(Integer driverId, Map<String, String> requestMap){
+        String topic = "";
+        User driver = userDao.getUserById(driverId);
+        if (driver == null){
+            return Response.failedResponse("failed at rideServiceImpl: driver on mqtt ", HttpStatus.BAD_REQUEST);
+        }
+        if (!requestMap.containsKey("topic") || !requestMap.containsKey("driverLatitude") || !requestMap.containsKey("driverLongitude")) {
+            return Response.failedResponse("failed at rideServiceImpl: driver on mqtt ", HttpStatus.BAD_REQUEST);
+        }
+        topic = requestMap.get("topic");
+
+        try{
+
+            String driver_mqtt_id = "d" + driverId + "_mqtt_test";
+            log.info("driver_mqtt_id: {}", driver_mqtt_id);
+            ScheduleService scheduleService = new ScheduleService(userDao, rideDao);
+
+            MqttServiceImpl mqttServiceImpl  = new MqttServiceImpl(scheduleService);
+            MqttClient mqttClient = mqttServiceImpl.mqtt_connection_and_subscription("driver", driver_mqtt_id, topic);
+
+            CustomCallBack customCallBack = new CustomCallBack(mqttClient, scheduleService);
+
+            HashMap<String, HashMap<String, HashMap<String, String>>> driverLocationMap = new HashMap<>();
+            HashMap<String, HashMap<String, String>> driverLocationInnerMap = new HashMap<>();
+            driverLocationInnerMap.put(driver_mqtt_id, new HashMap<>(requestMap));
+            driverLocationMap.put(topic, new HashMap<>(driverLocationInnerMap));
+            customCallBack.publishMessage(topic, driverLocationMap, 2, false);
+
+
+            try{
+                Thread.sleep(3000);
+            }catch (InterruptedException e){
+                e.printStackTrace();
+            }
+            /* autowire schedule service */
+
+
+            // 1. driver polling rides
+            CompletableFuture<Void> taskCompletion = scheduleService.startScheduledDriverPollTask(topic, driverId, requestMap);
+            final String finalTopic = topic;
+
+            try{
+                Thread.sleep(3000);
+            }catch (InterruptedException e){
+                e.printStackTrace();
+            }
+            log.info("executed part1");
+            // 2. driver found ride, accepted, now publish own trajectory
+
+            try{
+                HashMap<Integer, Set<Integer>> acceptedDriverRideMap = scheduleService.getAcceptedDriverRideMap();
+                log.info("acceptedDriveRideMap: {}", acceptedDriverRideMap);
+                Set<Integer> acceptedRideIdSet = null;
+
+                if(acceptedDriverRideMap.containsKey(driverId)) {
+                    acceptedRideIdSet = acceptedDriverRideMap.get(driverId);
+
+                }
+                Response driverOnMqttResponse = Response.successResponse();
+                HashMap<String,Object> driverOnMqttData = new HashMap<>();
+                driverOnMqttData.put("accepted", acceptedRideIdSet);
+                driverOnMqttResponse.setData(driverOnMqttData);
+                return driverOnMqttResponse;
+
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+
+
+
+
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return Response.failedResponse("failed at driverOnMqtt: ", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
     @Override
     public Response driverAcceptRideSession(Integer rideId, Map<String,String> requestMap){
 
         log.info("Inside Driver Accept RideSession rideId {}, requestMap {}", rideId, requestMap);
+
         Pageable pageable = PageRequest.of(0, 10); // Limit to 1 result
         Page<Ride> latestRidePage = rideDao.findLatestRide(pageable);
         List<Ride> latestRide = latestRidePage.getContent();
@@ -77,7 +165,7 @@ public class RideServiceImpl implements RideService {
         Response sessionResponse = new Response();
 
         if(validateCreateSessionMap(requestMap)){
-           User driver = userDao.findById(Integer.parseInt(requestMap.get("driverId"))).orElseThrow();
+            User driver = userDao.findById(Integer.parseInt(requestMap.get("driverId"))).orElseThrow();
 
             if(driver != null){
 
@@ -298,7 +386,8 @@ public class RideServiceImpl implements RideService {
             if(validateRequestRideMap(requestMap)){
                 Ride ride = getRideFromMap(requestMap);
 
-                User passenger = userDao.findById(Integer.parseInt(requestMap.get("uid"))).orElseThrow();
+                Integer passenger_id = Integer.parseInt(requestMap.get("uid"));
+                User passenger = userDao.findById(passenger_id).orElseThrow();
                 // mqtt send
                 ride.setRideStatus(RideStatus.Created);
                 // save order created time
@@ -307,37 +396,80 @@ public class RideServiceImpl implements RideService {
                 log.info("ride order created time: {}", ride.getOrderCreatedTime());
 
                 // set mqtt topic
-                String channel = passenger.getState();
-                ride.setMQTTTopic(channel);
+                String topic = passenger.getState();
+                ride.setMQTTTopic(topic);
 
                 rideDao.save(ride);
+                try{
+                    Thread.sleep(5000);
+                }catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
                 Pageable pageable = PageRequest.of(0, 1); // Limit to 1 result
                 Page<Ride> latestRidePage = rideDao.findLatestRide(pageable);
                 Ride latestRide = latestRidePage.getContent().get(0);
                 log.info("latest rides: {}", latestRide);
 
-                awaiting_request.add(latestRide);
-                // send ride object to mqtt
-                Map<String,Object> request_ride_response = ObjectToHashMapConverter.convertObjectToMap(latestRide);
-                request_ride_response.put("province", passenger.getState());
-                request_ride_response.put("city", passenger.getCity());
-                log.info("request_ride_response: {}",request_ride_response);
-                log.info(ride.getMQTTTopic());
-                mqttConfiguration.setTopic(channel);
-                awaiting_request.add(ride);
-//                MqttPushClient mqttPushClient;
-//                mqttPushClient = mqttConfiguration.getMqttPushClient();
-//                if(mqttPushClient!=null){
-//                    MqttSubClient mqttSubClient = new MqttSubClient(mqttPushClient);
-//                    mqttSubClient.subscribe(channel, 2);
-//                    mqttPushClient.publish(2, false,channel,request_ride_response);
-//                }
+                try{
+
+                    String passenger_mqtt_id = "p" + passenger_id + "_mqtt_test";
+                    log.info("passenger_mqtt_id: {}", passenger_mqtt_id);
+                    ScheduleService scheduleService = new ScheduleService(userDao, rideDao);
+
+                    MqttServiceImpl mqttServiceImpl  = new MqttServiceImpl(scheduleService);
+                    MqttClient mqttClient = mqttServiceImpl.mqtt_connection_and_subscription("passenger", passenger_mqtt_id, topic);
 
 
-                // response
+                    String rideId = latestRide.getRideId().toString();
 
+                    HashMap<String,String> rideInfo = new HashMap<>();
+                    rideInfo.put("rid", rideId);
+                    HashMap<String,HashMap<String, String>> passengerRequestInnerMap = new HashMap<>();
+                    HashMap<String, HashMap<String, HashMap<String,String>>> passengerRequestMap = new HashMap<>();
+                    passengerRequestInnerMap.put("ride", new HashMap<>(rideInfo));
+                    passengerRequestMap.put(topic, new HashMap<>(passengerRequestInnerMap));
+                    CustomCallBack customCallBack = new CustomCallBack(mqttClient, scheduleService);
+                    customCallBack.publishMessage(topic, passengerRequestMap, 2, false);
+
+                    try{
+                        Thread.sleep(3000);
+                    }catch (InterruptedException e){
+                        e.printStackTrace();
+                    }
+                    /* autowire schedule service */
+
+                    CompletableFuture<Void> taskCompletion = scheduleService.startScheduledPassengerRequestRideTask(topic, passenger_id);
+                    try{
+                        Thread.sleep(3000);
+                    }catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    // response
+
+
+                }catch (MqttException e){
+//                    if (e.getReasonCode() == MqttException.REASON_CODE_CLIENT_DISCONNECTING) {
+//                        // Handle disconnection without exiting the try-catch block
+//                        log.info("MQTT client is disconnecting. Handling the disconnection...");
+//                    } else {
+//                        // Handle other MQTT exceptions
+//                        e.printStackTrace();
+//                    }
+                    e.printStackTrace();
+                }
+                latestRidePage = rideDao.findLatestRide(pageable);
+                latestRide = latestRidePage.getContent().get(0);
+                Map<String,Object> request_ride_response = new HashMap<>();
+                request_ride_response.put("userId", passenger_id);
+                request_ride_response.put("rideId", latestRide.getRideId());
+                request_ride_response.put("topic", topic);
+                request_ride_response.put("pickupLat",latestRide.getDepartureLatitude());
+                request_ride_response.put("pickupLong", latestRide.getDepartureLongitude());
+                request_ride_response.put("destLat", latestRide.getDestinationLatitude());
+                request_ride_response.put("destLong", latestRide.getDestinationLongitude());
                 Response response = Response.successResponse();
                 response.setData(request_ride_response);
+                log.info("response: {}", response);
                 return response;
 
             }else{
@@ -348,6 +480,7 @@ public class RideServiceImpl implements RideService {
         }
         return Response.failedResponse("requestRide", HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
 
     @Override
     public Response cancelRide(Integer rideId, Map<String,String>requestMap){
@@ -399,7 +532,7 @@ public class RideServiceImpl implements RideService {
 
     @Override
     public Response subscriptions(String topic){
-        String baseUrl = "http://10.157.37.70:18083"; // Replace with your EMQX host and port
+        String baseUrl = "http://10.157.20.99:18083"; // Replace with your EMQX host and port
         String topicFilter = topic; // Replace with the topic you're interested in
         String username = "admin";
         String password = "public";
@@ -461,7 +594,7 @@ public class RideServiceImpl implements RideService {
 
 
     private boolean emqxSubscriberFinder(String topic){
-        String baseUrl = "http://10.157.37.70:18083"; // Replace with your EMQX host and port
+        String baseUrl = "http://10.157.20.99:18083"; // Replace with your EMQX host and port
         String topicFilter = topic; // Replace with the topic you're interested in
         String username = "admin";
         String password = "public";
@@ -509,22 +642,14 @@ public class RideServiceImpl implements RideService {
     @Override
     public Response listenToRideStatus(Integer rideId){
         try{
-            //log.info("inside: listenToRideStatus");
-            Response statusResponse = Response.successResponse();
-            statusResponse.setStatus(0);
-            log.info("NewAcceptedRideId: {}", NewAcceptedRideIds);
-
-            for(Integer NewAcceptedRideId: NewAcceptedRideIds){
-                log.info("New accepted ride is: {}",NewAcceptedRideId);
-                log.info("rideId: {}",rideId);
-                if(rideId.equals(NewAcceptedRideId)){
-                    log.info("rideId == NewAcceptedRideId");
-                    statusResponse.setMsg("true");
-                    return statusResponse;
-                }
-            }
-            statusResponse.setMsg("false");
-            return statusResponse;
+            Ride ride = rideDao.findById(rideId).orElseThrow();
+            RideStatus rideStatus = ride.getRideStatus();
+            String rideStatusInString = rideStatus.toString();
+            Response response = Response.successResponse();
+            HashMap<String, Object> rideStatusResponse = new HashMap<>();
+            rideStatusResponse.put("ride_status", rideStatusInString);
+            response.setData(rideStatusResponse);
+            return response;
 
         }catch(Exception e){
             e.printStackTrace();
@@ -553,6 +678,7 @@ public class RideServiceImpl implements RideService {
 
 
     /* polling ride status change */
+    /*
     @Scheduled(fixedDelay=80000) // Poll every 80 seconds
     public void pollRideStatus(){
         log.info("inside poll ride status");
@@ -592,7 +718,7 @@ public class RideServiceImpl implements RideService {
             }
         }
     }
-
+    */
 
     private HashMap<String,Object> rideData(Ride ride){
         HashMap<String,Object> data = new HashMap<>();
@@ -717,6 +843,16 @@ public class RideServiceImpl implements RideService {
 
     }
 
+    public Response deleteAllRides(){
+        try{
+            rideDao.deleteAllRides();
+            return Response.successResponse();
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+
+        return Response.failedResponse("failed: delete all rides", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }
 
 
